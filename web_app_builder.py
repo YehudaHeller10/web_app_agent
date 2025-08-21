@@ -96,6 +96,7 @@ class MainWindow(QtWidgets.QMainWindow):
 		self.refresh_models_btn.setText("Refresh Models")
 		self.generate_btn = QtWidgets.QPushButton("Generate Website")
 		self.generate_btn.clicked.connect(self._on_generate)
+		self.model_combo.activated.connect(self._on_model_selected)
 
 		center_top = QtWidgets.QHBoxLayout()
 		center_top.addWidget(QtWidgets.QLabel("Model:"))
@@ -171,8 +172,9 @@ class MainWindow(QtWidgets.QMainWindow):
 		for m in models:
 			status = "(cached)" if self.llm.is_downloaded(m) else ""
 			self.model_combo.addItem(f"{m.name} {status}", m)
+			self.model_combo.setItemData(self.model_combo.count()-1, m, QtCore.Qt.ItemDataRole.UserRole)
 		if self.model_combo.count() == 0:
-			self.model_combo.addItem("No models found - check internet and try Refresh", None)
+			self.model_combo.addItem("NO MODELS FOUNDS", None)
 
 	def _load_history(self) -> None:
 		self.history_list.clear()
@@ -204,7 +206,7 @@ class MainWindow(QtWidgets.QMainWindow):
 			return
 		model: Optional[ModelInfo] = self.model_combo.currentData()
 		if model is None:
-			QtWidgets.QMessageBox.warning(self, "Model needed", "Please refresh and select a GPT4All model.")
+			QtWidgets.QMessageBox.warning(self, "Model needed", "NO MODELS FOUNDS")
 			return
 		self._set_all_steps_idle()
 		self.steps[0].set_active(True)
@@ -222,6 +224,27 @@ class MainWindow(QtWidgets.QMainWindow):
 		self.worker.error.connect(self.thread.quit)
 		self.thread.finished.connect(self.worker.deleteLater)
 		self.thread.start()
+
+	def _on_model_selected(self) -> None:
+		model: Optional[ModelInfo] = self.model_combo.currentData(QtCore.Qt.ItemDataRole.UserRole)
+		if not model or self.llm.is_downloaded(model):
+			return
+		mb = QtWidgets.QMessageBox(self)
+		mb.setIcon(QtWidgets.QMessageBox.Icon.Question)
+		mb.setWindowTitle("Download Model")
+		mb.setText("The selected model will be downloaded to the local 'models' folder for future use. Continue?")
+		mb.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No)
+		if mb.exec() != QtWidgets.QMessageBox.StandardButton.Yes:
+			return
+		progress = QtWidgets.QProgressDialog("Downloading model…", "Cancel", 0, 100, self)
+		progress.setWindowModality(QtCore.Qt.WindowModality.WindowModal)
+		progress.setAutoClose(True)
+		progress.show()
+		try:
+			self.llm.download_model(model, progress=lambda d, t: progress.setValue(int(d * 100 / max(1, t))))
+			self._load_models()
+		except Exception as e:
+			QtWidgets.QMessageBox.critical(self, "Download failed", str(e))
 
 	def _on_progress_step(self, step: str) -> None:
 		mapping = {

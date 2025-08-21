@@ -22,7 +22,8 @@ MODEL_SOURCES = [
 	"https://raw.githubusercontent.com/nomic-ai/gpt4all/main/models/models.json",
 ]
 
-DEFAULT_MODEL_DIR = Path.home() / ".cache" / "gpt4all"
+BASE_DIR = Path(__file__).parent.resolve()
+DEFAULT_MODEL_DIR = BASE_DIR / "models"
 DEFAULT_MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
 
