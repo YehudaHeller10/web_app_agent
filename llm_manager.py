@@ -137,6 +137,8 @@ class LLMManager:
 		if GPT4All is None:
 			raise RuntimeError("gpt4all package not installed")
 		model_path = str(self.model_dir / model.filename)
+		if not Path(model_path).exists():
+			raise RuntimeError(f"Model file not found: {model_path}")
 		if step_callback:
 			step_callback("planning")
 		# Instruct model to return strict JSON
@@ -152,7 +154,8 @@ class LLMManager:
 		)
 		if step_callback:
 			step_callback("design")
-		with GPT4All(model_path=model_path, allow_download=False, device='cpu') as llm:
+		try:
+			llm = GPT4All(model_name=model_path, allow_download=False, device='cpu')
 			if step_callback:
 				step_callback("html")
 			response = llm.generate(
@@ -160,6 +163,9 @@ class LLMManager:
 				temp=0.1,
 				max_tokens=4096,
 			)
+			llm.close()
+		except Exception as e:
+			raise RuntimeError(f"Model generation failed: {str(e)}")
 		# Try parse JSON
 		try:
 			data = self._extract_json(response)

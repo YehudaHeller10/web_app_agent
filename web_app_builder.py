@@ -247,6 +247,13 @@ class MainWindow(QtWidgets.QMainWindow):
 		if model is None:
 			QtWidgets.QMessageBox.warning(self, "Model needed", "NO MODELS FOUNDS")
 			return
+		
+		# Verify model file exists
+		model_path = self.llm.model_dir / model.filename
+		if not model_path.exists():
+			QtWidgets.QMessageBox.critical(self, "Model Error", f"Model file not found: {model_path}\nPlease download the model first.")
+			return
+			
 		self._set_all_steps_idle()
 		self.steps[0].set_active(True)
 		self.generate_btn.setEnabled(False)
@@ -322,7 +329,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
 	def _on_generation_error(self, message: str) -> None:
 		self.generate_btn.setEnabled(True)
-		QtWidgets.QMessageBox.critical(self, "Generation failed", message)
+		# Show detailed error information
+		error_dialog = QtWidgets.QMessageBox(self)
+		error_dialog.setIcon(QtWidgets.QMessageBox.Icon.Critical)
+		error_dialog.setWindowTitle("Generation Failed")
+		error_dialog.setText(f"Error: {message}")
+		error_dialog.setDetailedText(f"Model: {self.model_combo.currentText()}\nPrompt: {self.prompt_edit.toPlainText()[:100]}...")
+		error_dialog.exec()
 
 	def _set_all_steps_idle(self) -> None:
 		labels = [
