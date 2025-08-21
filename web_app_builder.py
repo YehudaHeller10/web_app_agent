@@ -26,7 +26,12 @@ class ChatMessage(QtWidgets.QWidget):
 		avatar.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
 		avatar.setStyleSheet("font-size: 20px;")
 		
-		# Message content
+		# Message content container
+		content_container = QtWidgets.QWidget()
+		content_layout = QtWidgets.QVBoxLayout(content_container)
+		content_layout.setContentsMargins(0, 0, 0, 0)
+		
+		# Main message content
 		self.content_label = QtWidgets.QLabel(content)
 		self.content_label.setWordWrap(True)
 		self.content_label.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.TextSelectableByMouse)
@@ -42,17 +47,70 @@ class ChatMessage(QtWidgets.QWidget):
 			}
 		""")
 		
+		# Expandable raw output section (for AI messages only)
+		if not is_user:
+			self.toggle_btn = QtWidgets.QPushButton("📄 Show Raw Output")
+			self.toggle_btn.setStyleSheet("""
+				QPushButton {
+					background-color: transparent;
+					border: 1px solid #ddd;
+					border-radius: 6px;
+					padding: 4px 8px;
+					color: #666;
+					font-size: 12px;
+					margin-top: 8px;
+				}
+				QPushButton:hover {
+					background-color: #f0f0f0;
+				}
+			""")
+			self.toggle_btn.clicked.connect(self._toggle_raw_output)
+			
+			self.raw_output = QtWidgets.QTextEdit()
+			self.raw_output.setMaximumHeight(200)
+			self.raw_output.setStyleSheet("""
+				QTextEdit {
+					background-color: #f8f9fa;
+					border: 1px solid #ddd;
+					border-radius: 8px;
+					padding: 8px;
+					color: #333;
+					font-family: 'Courier New', monospace;
+					font-size: 12px;
+				}
+			""")
+			self.raw_output.hide()
+			
+			content_layout.addWidget(self.content_label)
+			content_layout.addWidget(self.toggle_btn)
+			content_layout.addWidget(self.raw_output)
+		else:
+			content_layout.addWidget(self.content_label)
+		
 		if is_user:
 			layout.addStretch()
-			layout.addWidget(self.content_label)
+			layout.addWidget(content_container)
 			layout.addWidget(avatar)
 		else:
 			layout.addWidget(avatar)
-			layout.addWidget(self.content_label)
+			layout.addWidget(content_container)
 			layout.addStretch()
 
 	def update_content(self, content: str) -> None:
 		self.content_label.setText(content)
+
+	def update_raw_output(self, raw_text: str) -> None:
+		if hasattr(self, 'raw_output'):
+			self.raw_output.setPlainText(raw_text)
+
+	def _toggle_raw_output(self) -> None:
+		if hasattr(self, 'raw_output'):
+			if self.raw_output.isVisible():
+				self.raw_output.hide()
+				self.toggle_btn.setText("📄 Show Raw Output")
+			else:
+				self.raw_output.show()
+				self.toggle_btn.setText("📄 Hide Raw Output")
 
 
 class ProgressSpinner(QtWidgets.QWidget):
@@ -88,6 +146,7 @@ class GenerationWorker(QtCore.QObject):
 	error = QtCore.Signal(str)
 	progress_step = QtCore.Signal(str)
 	progress_message = QtCore.Signal(str)
+	raw_output = QtCore.Signal(str)
 	download_progress = QtCore.Signal(int, int)
 
 	def __init__(self, prompt: str, model: ModelInfo, llm: LLMManager, pm: ProjectManager) -> None:
@@ -110,7 +169,8 @@ class GenerationWorker(QtCore.QObject):
 				self.prompt, 
 				self.model, 
 				step_callback=lambda s: self.progress_step.emit(s),
-				progress_callback=lambda msg: self.progress_message.emit(msg)
+				progress_callback=lambda msg: self.progress_message.emit(msg),
+				raw_callback=lambda raw: self.raw_output.emit(raw)
 			)
 			self.finished.emit(result)
 		except Exception as e:
@@ -413,6 +473,7 @@ class MainWindow(QtWidgets.QMainWindow):
 		self.worker.moveToThread(self.thread)
 		self.thread.started.connect(self.worker.run)
 		self.worker.progress_message.connect(self._update_ai_message)
+		self.worker.raw_output.connect(self._update_raw_output)
 		self.worker.finished.connect(self._on_generation_finished)
 		self.worker.error.connect(self._on_generation_error)
 		self.worker.finished.connect(self.thread.quit)
@@ -422,14 +483,11 @@ class MainWindow(QtWidgets.QMainWindow):
 
 	def _update_ai_message(self, content: str) -> None:
 		if hasattr(self, 'current_ai_message'):
-			# Append new content to existing message for streaming effect
-			current_content = self.current_ai_message.content_label.text()
-			if content.startswith(current_content):
-				# New content, update
-				self.current_ai_message.update_content(content)
-			else:
-				# Streaming content, append
-				self.current_ai_message.update_content(current_content + content)
+			self.current_ai_message.update_content(content)
+
+	def _update_raw_output(self, raw_text: str) -> None:
+		if hasattr(self, 'current_ai_message'):
+			self.current_ai_message.update_raw_output(raw_text)
 
 	def _on_model_selected(self) -> None:
 		model: Optional[ModelInfo] = self.model_combo.currentData(QtCore.Qt.ItemDataRole.UserRole)

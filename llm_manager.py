@@ -133,7 +133,7 @@ class LLMManager:
 							progress(downloaded, total)
 		return dest
 
-	def generate_site(self, prompt: str, model: ModelInfo, step_callback: Optional[Callable[[str], None]] = None, progress_callback: Optional[Callable[[str], None]] = None) -> Dict[str, str]:
+	def generate_site(self, prompt: str, model: ModelInfo, step_callback: Optional[Callable[[str], None]] = None, progress_callback: Optional[Callable[[str], None]] = None, raw_callback: Optional[Callable[[str], None]] = None) -> Dict[str, str]:
 		if GPT4All is None:
 			raise RuntimeError("gpt4all package not installed")
 		model_path = str(self.model_dir / model.filename)
@@ -178,22 +178,30 @@ class LLMManager:
 			if progress_callback:
 				progress_callback("⚙️ **Processing**\n\nGenerating code...")
 			
-			# Generate without streaming first to debug
-			prompt_text = f"SYSTEM:\n{system}\nUSER:\n{user}\nASSISTANT:"
-			response = llm.generate(
-				prompt_text,
-				temp=0.1,
-				max_tokens=4096,
-			)
-			
-			# Show the full response for debugging
-			if progress_callback:
-				progress_callback(f"📝 **Response**\n\n{response[:500]}...")
-			llm.close()
-			
-			if progress_callback:
-				progress_callback("📝 **Processing**\n\nExtracting code...")
-				
+					# Generate with streaming for real-time output
+		prompt_text = f"SYSTEM:\n{system}\nUSER:\n{user}\nASSISTANT:"
+		response_parts = []
+		current_text = ""
+		
+		def on_token(token: str) -> None:
+			nonlocal current_text
+			response_parts.append(token)
+			current_text += token
+			if progress_callback and len(current_text) > 10:
+				progress_callback(f"⚙️ **Generating**\n\n{current_text}")
+		
+		response = llm.generate(
+			prompt_text,
+			temp=0.1,
+			max_tokens=4096,
+			streaming=True,
+			callback=on_token,
+		)
+		llm.close()
+		
+		if progress_callback:
+			progress_callback("📝 **Processing**\n\nExtracting code...")
+
 		except Exception as e:
 			raise RuntimeError(f"Model generation failed: {str(e)}")
 		
@@ -214,6 +222,10 @@ class LLMManager:
 				# Log the parsing issue for debugging
 				print(f"JSON parsing failed: {e}")
 				print(f"Response preview: {response[:500]}...")
+		
+		# Store the full response for raw output display
+		if raw_callback:
+			raw_callback(response)
 		
 		if progress_callback:
 			progress_callback("✅ **Website Ready!**\n\nYour website has been generated successfully! The files are being saved and the preview will update shortly.")
