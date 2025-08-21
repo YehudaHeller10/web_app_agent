@@ -30,14 +30,15 @@ class ChatMessage(QtWidgets.QWidget):
 		self.content_label = QtWidgets.QLabel(content)
 		self.content_label.setWordWrap(True)
 		self.content_label.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.TextSelectableByMouse)
+		self.content_label.setTextFormat(QtCore.Qt.TextFormat.MarkdownText)
 		self.content_label.setStyleSheet("""
 			QLabel {
-				background-color: rgba(255,255,255,0.05);
+				background-color: #ffffff;
 				border-radius: 12px;
 				padding: 12px 16px;
-				color: #e6eef8;
+				color: #111111;
 				font-size: 14px;
-				line-height: 1.5;
+				line-height: 1.6;
 			}
 		""")
 		
@@ -399,6 +400,7 @@ class MainWindow(QtWidgets.QMainWindow):
 		
 		# Add user message to chat
 		self._add_chat_message(prompt, True)
+		self._last_prompt = prompt
 		
 		# Add initial AI message
 		self.current_ai_message = self._add_progress_message("🤖 **AI Assistant**\n\nInitializing...")
@@ -445,7 +447,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
 	def _on_generation_finished(self, result: dict) -> None:
 		self.generate_btn.setEnabled(True)
-		prompt = self.prompt_edit.toPlainText().strip()
+		# Use last prompt to avoid empty project name after clearing input
+		prompt = getattr(self, "_last_prompt", self.prompt_edit.toPlainText().strip())
 		name = self._project_name_from_prompt(prompt)
 		project_dir = self.pm.ensure_project_dir(name)
 		self.pm.save_site_files(project_dir, result.get("html", ""), result.get("css", ""), result.get("js", ""))

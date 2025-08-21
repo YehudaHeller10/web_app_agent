@@ -219,6 +219,12 @@ class LLMManager:
 		return {"html": html, "css": css, "js": js}
 
 	def _extract_json(self, text: str) -> Dict[str, str]:
+		# Prefer fenced ```json blocks if present
+		fenced = re.search(r"```json\s*([\s\S]*?)\s*```", text, re.IGNORECASE)
+		if fenced:
+			candidate = fenced.group(1)
+			return json.loads(candidate)
+		# Fallback: first JSON-like object
 		m = re.search(r"\{[\s\S]*\}", text)
 		if not m:
 			raise ValueError("No JSON found")
