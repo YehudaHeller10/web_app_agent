@@ -100,8 +100,10 @@ class ChatMessage(QtWidgets.QWidget):
 		self.content_label.setText(content)
 
 	def update_raw_output(self, raw_text: str) -> None:
+		print(f"ChatMessage.update_raw_output called, length: {len(raw_text)}")
 		if hasattr(self, 'raw_output'):
 			self.raw_output.setPlainText(raw_text)
+			print("✅ Raw output text set in QTextEdit")
 
 	def _toggle_raw_output(self) -> None:
 		if hasattr(self, 'raw_output'):
@@ -486,8 +488,10 @@ class MainWindow(QtWidgets.QMainWindow):
 			self.current_ai_message.update_content(content)
 
 	def _update_raw_output(self, raw_text: str) -> None:
+		print(f"Raw output callback received, length: {len(raw_text)}")
 		if hasattr(self, 'current_ai_message'):
 			self.current_ai_message.update_raw_output(raw_text)
+			print("✅ Raw output updated in UI")
 
 	def _on_model_selected(self) -> None:
 		model: Optional[ModelInfo] = self.model_combo.currentData(QtCore.Qt.ItemDataRole.UserRole)

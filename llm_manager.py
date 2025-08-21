@@ -189,27 +189,37 @@ class LLMManager:
 		except Exception as e:
 			raise RuntimeError(f"Model generation failed: {str(e)}")
 		
+		# Store the full response for raw output display FIRST
+		print(f"About to call raw_callback, response length: {len(response)}")
+		if raw_callback:
+			print("✅ Raw callback exists, calling it...")
+			raw_callback(response)
+		else:
+			print("❌ Raw callback is None!")
+		
+		# Debug: Print response length and preview
+		print(f"Response length: {len(response)}")
+		print(f"Response preview: {response[:200]}...")
+		
 		# Try parse JSON first
 		try:
 			data = self._extract_json(response)
 			html = data.get("html", "")
 			css = data.get("css", "")
 			js = data.get("js", "")
+			print("✅ JSON parsing successful")
 		except Exception as e:
+			print(f"❌ JSON parsing failed: {e}")
 			# Try extracting fenced code blocks (```html, ```css, ```js)
 			fenced = self._extract_from_fences(response)
 			if fenced is not None:
 				html, css, js = fenced
+				print("✅ Fenced code extraction successful")
 			else:
 				# Fallback naive splits
 				html, css, js = self._fallback_sections(response)
-				# Log the parsing issue for debugging
-				print(f"JSON parsing failed: {e}")
+				print("⚠️ Using fallback sections")
 				print(f"Response preview: {response[:500]}...")
-		
-		# Store the full response for raw output display
-		if raw_callback:
-			raw_callback(response)
 		
 		if progress_callback:
 			progress_callback("✅ **Website Ready!**\n\nYour website has been generated successfully! The files are being saved and the preview will update shortly.")
