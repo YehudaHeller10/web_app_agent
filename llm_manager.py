@@ -145,20 +145,18 @@ class LLMManager:
 		if progress_callback:
 			progress_callback("🎯 **Planning Phase**\n\nI'm analyzing your request: *" + prompt + "*\n\nLet me break this down and plan the website structure...")
 		
-		# Simplified system prompt for better JSON generation
+		# Prompt: narrative first, then strict JSON between delimiters
 		system = (
-			"You are a web developer. Create a website and return ONLY a JSON object with this exact format:\n"
-			"{\"html\": \"<html>...</html>\", \"css\": \"body{...}\", \"js\": \"console.log('...')\"}\n\n"
-			"Requirements:\n"
-			"- Include Tailwind CSS CDN in HTML head\n"
-			"- Link to styles.css and script.js\n"
-			"- Use modern HTML5 and responsive design\n"
-			"- Return ONLY the JSON, no other text"
+			"You are a senior web developer. First, write a brief, friendly explanation of what you are about to build. "
+			"Then, at the END of your response, output ONLY the final code as a single compact JSON object with keys html, css, js. "
+			"Wrap the JSON strictly between the delimiters <JSON_START> and <JSON_END>. Do NOT use markdown fences around the JSON. "
+			"Example: <JSON_START>{\"html\":\"...\",\"css\":\"...\",\"js\":\"...\"}<JSON_END>. "
+			"The HTML must include Tailwind CSS via CDN in <head> AND link to styles.css and script.js. Use responsive, modern design."
 		)
 		
 		user = (
 			f"Create a website for: {prompt}\n\n"
-			"Return ONLY a JSON object with html, css, and js keys."
+			"Remember: End with <JSON_START>{\"html\":\"...\",\"css\":\"...\",\"js\":\"...\"}<JSON_END> and nothing else."
 		)
 		
 		if step_callback:
@@ -174,17 +172,42 @@ class LLMManager:
 			if progress_callback:
 				progress_callback("⚙️ **Processing**\n\nGenerating code...")
 			
-			# Generate response
+			# Generate with streaming when supported; fallback to non-streaming
 			prompt_text = f"SYSTEM:\n{system}\nUSER:\n{user}\nASSISTANT:"
-			response = llm.generate(
-				prompt_text,
-				temp=0.1,
-				max_tokens=4096,
-			)
-			llm.close()
+			response = ""
+			try:
+				current_text = ""
+				def on_token(token: str) -> None:
+					nonlocal current_text
+					current_text += token
+					if raw_callback:
+						raw_callback(current_text)
+					if progress_callback and len(current_text) % 200 == 0:
+						progress_callback("⚙️ Generating…")
+				response = llm.generate(
+					prompt_text,
+					temp=0.1,
+					max_tokens=4096,
+					streaming=True,
+					callback=on_token,
+				)
+				# response may be empty with streaming; ensure we have final text
+				if not response:
+					response = current_text
+			except TypeError:
+				# Older GPT4All versions without streaming support
+				response = llm.generate(
+					prompt_text,
+					temp=0.1,
+					max_tokens=4096,
+				)
+				if raw_callback:
+					raw_callback(response)
+			finally:
+				llm.close()
 			
 			if progress_callback:
-				progress_callback("📝 **Processing**\n\nExtracting code...")
+				progress_callback("📝 **Processing**\n\nExtracting code…")
 				
 		except Exception as e:
 			raise RuntimeError(f"Model generation failed: {str(e)}")
@@ -201,25 +224,37 @@ class LLMManager:
 		print(f"Response length: {len(response)}")
 		print(f"Response preview: {response[:200]}...")
 		
-		# Try parse JSON first
-		try:
-			data = self._extract_json(response)
-			html = data.get("html", "")
-			css = data.get("css", "")
-			js = data.get("js", "")
-			print("✅ JSON parsing successful")
-		except Exception as e:
-			print(f"❌ JSON parsing failed: {e}")
-			# Try extracting fenced code blocks (```html, ```css, ```js)
-			fenced = self._extract_from_fences(response)
-			if fenced is not None:
-				html, css, js = fenced
-				print("✅ Fenced code extraction successful")
-			else:
-				# Fallback naive splits
-				html, css, js = self._fallback_sections(response)
-				print("⚠️ Using fallback sections")
-				print(f"Response preview: {response[:500]}...")
+		# Try parse JSON using delimiters first
+		m = re.search(r"<JSON_START>([\s\S]*?)<JSON_END>", response)
+		if m:
+			try:
+				data = json.loads(m.group(1).strip())
+				html = data.get("html", "")
+				css = data.get("css", "")
+				js = data.get("js", "")
+				print("✅ Delimited JSON parsing successful")
+			except Exception as e:
+				print(f"❌ Delimited JSON parsing failed: {e}")
+		else:
+			# Try classic JSON
+			try:
+				data = self._extract_json(response)
+				html = data.get("html", "")
+				css = data.get("css", "")
+				js = data.get("js", "")
+				print("✅ JSON parsing successful")
+			except Exception as e:
+				print(f"❌ JSON parsing failed: {e}")
+				# Try extracting fenced code blocks (```html, ```css, ```js)
+				fenced = self._extract_from_fences(response)
+				if fenced is not None:
+					html, css, js = fenced
+					print("✅ Fenced code extraction successful")
+				else:
+					# Fallback naive splits
+					html, css, js = self._fallback_sections(response)
+					print("⚠️ Using fallback sections")
+					print(f"Response preview: {response[:500]}...")
 		
 		if progress_callback:
 			progress_callback("✅ **Website Ready!**\n\nYour website has been generated successfully! The files are being saved and the preview will update shortly.")
