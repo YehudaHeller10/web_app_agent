@@ -76,23 +76,22 @@ class MainWindow(QtWidgets.QMainWindow):
 		self._load_history()
 
 	def _setup_ui(self) -> None:
+		# Create all widgets first
+		self._create_widgets()
+		self._setup_layouts()
+		self._connect_signals()
+
+	def _create_widgets(self) -> None:
 		# Left: History
 		self.history_search = QtWidgets.QLineEdit()
 		self.history_search.setPlaceholderText("Search projects…")
 		self.history_list = QtWidgets.QListWidget()
 		self.history_list.itemActivated.connect(self._open_history_item)
-		left = QtWidgets.QWidget()
-		lv = QtWidgets.QVBoxLayout(left)
-		lv.addWidget(QtWidgets.QLabel("History"))
-		lv.addWidget(self.history_search)
-		lv.addWidget(self.history_list, 1)
-		self.history_search.textChanged.connect(self._filter_history)
-
+		
 		# Collapsible history toggle
 		self.toggle_history_btn = QtWidgets.QToolButton()
 		self.toggle_history_btn.setText("Hide History")
 		self.toggle_history_btn.setCheckable(True)
-		self.toggle_history_btn.toggled.connect(lambda c: self._toggle_history(c, left))
 
 		# Center: Interaction
 		self.prompt_edit = QtWidgets.QTextEdit()
@@ -105,17 +104,8 @@ class MainWindow(QtWidgets.QMainWindow):
 		self.add_local_btn = QtWidgets.QToolButton()
 		self.add_local_btn.setText("Add Local Model")
 		self.generate_btn = QtWidgets.QPushButton("Generate Website")
-		self.generate_btn.clicked.connect(self._on_generate)
-		self.model_combo.activated.connect(self._on_model_selected)
 
-		center_top = QtWidgets.QHBoxLayout()
-		center_top.addWidget(QtWidgets.QLabel("Model:"))
-		center_top.addWidget(self.model_combo, 1)
-		center_top.addWidget(self.refresh_models_btn)
-		center_top.addWidget(self.open_models_btn)
-		center_top.addWidget(self.add_local_btn)
-		center_top.addWidget(self.generate_btn)
-
+		# Progress steps
 		self.steps = [
 			StepWidget("🎯", "Planning your website structure…"),
 			StepWidget("🎨", "Designing the visual layout…"),
@@ -125,6 +115,31 @@ class MainWindow(QtWidgets.QMainWindow):
 			StepWidget("✅", "Your website is ready!"),
 		]
 		self._set_all_steps_idle()
+
+		# Right: Preview
+		self.preview = WebPreview()
+
+	def _setup_layouts(self) -> None:
+		# Left panel
+		left = QtWidgets.QWidget()
+		lv = QtWidgets.QVBoxLayout(left)
+		lv.addWidget(QtWidgets.QLabel("History"))
+		lv.addWidget(self.history_search)
+		lv.addWidget(self.history_list, 1)
+
+		# Center panel
+		center_top = QtWidgets.QHBoxLayout()
+		center_top.addWidget(QtWidgets.QLabel("Model:"))
+		center_top.addWidget(self.model_combo, 1)
+		center_top.addWidget(self.refresh_models_btn)
+		center_top.addWidget(self.open_models_btn)
+		center_top.addWidget(self.add_local_btn)
+		center_top.addWidget(self.generate_btn)
+
+		header_row = QtWidgets.QHBoxLayout()
+		header_row.addWidget(QtWidgets.QLabel("Web App Builder"))
+		header_row.addStretch(1)
+		header_row.addWidget(self.toggle_history_btn)
 
 		steps_widget = QtWidgets.QWidget()
 		steps_layout = QtWidgets.QVBoxLayout(steps_widget)
@@ -145,11 +160,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
 		center = QtWidgets.QWidget()
 		cv = QtWidgets.QVBoxLayout(center)
-		header_row = QtWidgets.QHBoxLayout()
-		header_row.addWidget(QtWidgets.QLabel("Web App Builder"))
-		header_row.addStretch(1)
-		header_row.addWidget(self.toggle_history_btn)
-
 		cv.addLayout(header_row)
 		cv.addLayout(center_top)
 		cv.addLayout(suggestions)
@@ -157,9 +167,7 @@ class MainWindow(QtWidgets.QMainWindow):
 		cv.addWidget(QtWidgets.QLabel("Progress"))
 		cv.addWidget(steps_widget)
 
-		# Right: Preview
-		self.preview = WebPreview()
-
+		# Main splitter
 		splitter = QtWidgets.QSplitter()
 		splitter.addWidget(left)
 		splitter.addWidget(center)
@@ -168,9 +176,14 @@ class MainWindow(QtWidgets.QMainWindow):
 
 		self.setCentralWidget(splitter)
 
+	def _connect_signals(self) -> None:
+		self.history_search.textChanged.connect(self._filter_history)
+		self.generate_btn.clicked.connect(self._on_generate)
+		self.model_combo.activated.connect(self._on_model_selected)
 		self.refresh_models_btn.clicked.connect(self._load_models)
 		self.open_models_btn.clicked.connect(self._open_models_folder)
 		self.add_local_btn.clicked.connect(self._add_local_model)
+		self.toggle_history_btn.toggled.connect(self._toggle_history)
 
 	def _apply_theme(self) -> None:
 		# Blue/black gradient theme via QSS
@@ -189,14 +202,18 @@ class MainWindow(QtWidgets.QMainWindow):
 		)
 
 	def _load_models(self) -> None:
-		self.model_combo.clear()
-		models = self.llm.list_available_models(prioritize_code=True)[:30]
-		for m in models:
-			status = "(cached)" if self.llm.is_downloaded(m) else ""
-			self.model_combo.addItem(f"{m.name} {status}", m)
-			self.model_combo.setItemData(self.model_combo.count()-1, m, QtCore.Qt.ItemDataRole.UserRole)
-		if self.model_combo.count() == 0:
-			self.model_combo.addItem("NO MODELS FOUNDS", None)
+		try:
+			self.model_combo.clear()
+			models = self.llm.list_available_models(prioritize_code=True)[:30]
+			for m in models:
+				status = "(cached)" if self.llm.is_downloaded(m) else ""
+				self.model_combo.addItem(f"{m.name} {status}", m)
+				self.model_combo.setItemData(self.model_combo.count()-1, m, QtCore.Qt.ItemDataRole.UserRole)
+			if self.model_combo.count() == 0:
+				self.model_combo.addItem("NO MODELS FOUNDS", None)
+		except Exception as e:
+			self.model_combo.clear()
+			self.model_combo.addItem(f"Error loading models: {str(e)}", None)
 
 	def _load_history(self) -> None:
 		self.history_list.clear()
@@ -339,8 +356,10 @@ class MainWindow(QtWidgets.QMainWindow):
 		except Exception as e:
 			QtWidgets.QMessageBox.critical(self, "Add model failed", str(e))
 
-	def _toggle_history(self, collapsed: bool, panel: QtWidgets.QWidget) -> None:
-		panel.setVisible(not collapsed)
+	def _toggle_history(self, collapsed: bool) -> None:
+		# Find the left panel (first widget in splitter)
+		left_panel = self.centralWidget().widget(0)
+		left_panel.setVisible(not collapsed)
 		self.toggle_history_btn.setText("Show History" if collapsed else "Hide History")
 
 
