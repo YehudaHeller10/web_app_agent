@@ -20,9 +20,35 @@ pip install -r requirements.txt
 ```
 
 ## Run
+### Option 1: Direct run (may show CUDA warnings)
 ```bash
 python web_app_builder.py
 ```
+
+### Option 2: CPU-only mode (recommended)
+```bash
+python run_with_cpu.py
+```
+
+## Troubleshooting
+
+### CUDA Errors
+If you see CUDA-related errors like "Failed to load llamamodel-mainline-cuda.dll", use the CPU-only wrapper:
+```bash
+python run_with_cpu.py
+```
+
+### No Models Found
+1. Click "Refresh Models" to load available models
+2. Or add a local `.gguf` model file:
+   - Click "Add Local Model" 
+   - Select your `.gguf` file
+   - Click "Refresh Models"
+
+### Model Download Issues
+- Models are cached in the `models/` folder
+- Click "Open Models Folder" to view downloaded models
+- Large models may take time to download
 
 ## Output Structure
 ```
@@ -37,3 +63,4 @@ output_projects/
 ## Notes
 - First run of a new model will download it. This may take time depending on bandwidth.
 - All websites are static and suitable for GitHub Pages.
+- The app runs in CPU-only mode by default to avoid CUDA compatibility issues.

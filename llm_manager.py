@@ -155,7 +155,15 @@ class LLMManager:
 		if step_callback:
 			step_callback("design")
 		try:
-			llm = GPT4All(model_name=model_path, allow_download=False, device='cpu')
+			# Force CPU mode and disable CUDA
+			llm = GPT4All(
+				model_name=model_path, 
+				allow_download=False, 
+				device='cpu',
+				use_mlock=False,
+				use_mmap=True,
+				threads=4
+			)
 			if step_callback:
 				step_callback("html")
 			response = llm.generate(
