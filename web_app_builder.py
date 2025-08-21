@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import math
 from pathlib import Path
 from typing import Optional
 
@@ -73,12 +74,12 @@ class ProgressSpinner(QtWidgets.QWidget):
 		center = self.rect().center()
 		radius = 8
 		for i in range(8):
-			angle = self.angle + i * 45
-			x = center.x() + radius * 2 * QtCore.Qt.cos(QtCore.Qt.radians(angle))
-			y = center.y() + radius * 2 * QtCore.Qt.sin(QtCore.Qt.radians(angle))
+			angle = math.radians(self.angle + i * 45)
+			x = center.x() + int(radius * 2 * math.cos(angle))
+			y = center.y() + int(radius * 2 * math.sin(angle))
 			alpha = 255 - (i * 30)
 			painter.setPen(QtGui.QPen(QtGui.QColor(255, 255, 255, alpha), 3))
-			painter.drawPoint(int(x), int(y))
+			painter.drawPoint(x, y)
 
 
 class GenerationWorker(QtCore.QObject):

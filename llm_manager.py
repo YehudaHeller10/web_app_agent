@@ -145,24 +145,28 @@ class LLMManager:
 		if progress_callback:
 			progress_callback("🎯 **Planning Phase**\n\nI'm analyzing your request: *" + prompt + "*\n\nLet me break this down and plan the website structure...")
 		
-		# Enhanced system prompt with step-by-step explanations
+		# Enhanced system prompt with step-by-step explanations and Tailwind usage
 		system = (
 			"You are a senior web developer creating a complete static website. "
 			"Explain your process step by step as you work, then provide the final code. "
+			"Use Tailwind CSS via CDN for professional styling, but also include a styles.css file for custom overrides. "
+			"In the HTML <head>, include the Tailwind CDN script and also link to styles.css and script.js. "
 			"Format your response like this:\n\n"
 			"🎨 **Design Phase**\n[Explain your design decisions]\n\n"
 			"⚙️ **Implementation Phase**\n[Explain what you're building]\n\n"
 			"📝 **Final Code**\n```json\n{\"html\": \"...\", \"css\": \"...\", \"js\": \"...\"}\n```\n\n"
-			"Use modern HTML5 semantic tags, responsive CSS with blue/black gradients, and clean ES6 JavaScript."
+			"Use modern HTML5 semantic tags, responsive design, Tailwind utility classes, and clean ES6 JavaScript."
 		)
 		
 		user = (
 			f"Create a website for: {prompt}\n\n"
 			"Requirements:\n"
-			"- Single-page index.html with links to styles.css and script.js\n"
-			"- Modern, responsive design with blue/black gradient theme\n"
-			"- Clean, accessible JavaScript\n"
-			"- Professional and beautiful UI\n\n"
+			"- Single-page index.html\n"
+			"- Include Tailwind CSS via CDN in <head>\n"
+			"- Also include links to styles.css and script.js\n"
+			"- Use Tailwind classes for a premium, professional design\n"
+			"- Keep custom CSS minimal and scoped for overrides\n"
+			"- Modern, responsive design and accessible JS\n\n"
 			"Please explain your process as you work."
 		)
 		
