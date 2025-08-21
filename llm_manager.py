@@ -177,12 +177,9 @@ class LLMManager:
 		
 		try:
 			llm = GPT4All(
-				model_name=model_path, 
-				allow_download=False, 
-				device='cpu',
-				use_mlock=False,
-				use_mmap=True,
-				threads=4
+				model_name=model_path,
+				allow_download=False,
+				device='cpu'
 			)
 			
 			if step_callback:

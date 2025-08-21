@@ -463,12 +463,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
 	def _on_generation_error(self, message: str) -> None:
 		self.generate_btn.setEnabled(True)
-		# Show detailed error information
+		# Show detailed error information with readable styling
 		error_dialog = QtWidgets.QMessageBox(self)
 		error_dialog.setIcon(QtWidgets.QMessageBox.Icon.Critical)
 		error_dialog.setWindowTitle("Generation Failed")
 		error_dialog.setText(f"❌ Error: {message}")
 		error_dialog.setDetailedText(f"Model: {self.model_combo.currentText()}\nPrompt: {self.prompt_edit.toPlainText()[:100]}...")
+		error_dialog.setStyleSheet("QLabel{color:#111;background:#fff;} QMessageBox{background:#fff;} QPushButton{background:#10a37f;color:#fff;border:none;border-radius:6px;padding:6px 10px;}")
 		error_dialog.exec()
 
 	def _open_models_folder(self) -> None:
