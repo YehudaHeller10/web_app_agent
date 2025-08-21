@@ -184,17 +184,19 @@ class LLMManager:
 						raw_callback(current_text)
 					if progress_callback and len(current_text) % 200 == 0:
 						progress_callback("⚙️ Generating…")
-				response = llm.generate(
+				
+				# Try streaming first
+				stream_response = llm.generate(
 					prompt_text,
 					temp=0.1,
 					max_tokens=4096,
 					streaming=True,
 					callback=on_token,
 				)
-				# response may be empty with streaming; ensure we have final text
-				if not response:
-					response = current_text
-			except TypeError:
+				# With streaming, the response is the final accumulated text
+				response = current_text
+				
+			except (TypeError, AttributeError):
 				# Older GPT4All versions without streaming support
 				response = llm.generate(
 					prompt_text,
@@ -211,6 +213,10 @@ class LLMManager:
 				
 		except Exception as e:
 			raise RuntimeError(f"Model generation failed: {str(e)}")
+		
+		# Ensure response is a string
+		if not isinstance(response, str):
+			response = str(response) if response is not None else ""
 		
 		# Store the full response for raw output display FIRST
 		print(f"About to call raw_callback, response length: {len(response)}")
