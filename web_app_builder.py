@@ -88,6 +88,12 @@ class MainWindow(QtWidgets.QMainWindow):
 		lv.addWidget(self.history_list, 1)
 		self.history_search.textChanged.connect(self._filter_history)
 
+		# Collapsible history toggle
+		self.toggle_history_btn = QtWidgets.QToolButton()
+		self.toggle_history_btn.setText("Hide History")
+		self.toggle_history_btn.setCheckable(True)
+		self.toggle_history_btn.toggled.connect(lambda c: self._toggle_history(c, left))
+
 		# Center: Interaction
 		self.prompt_edit = QtWidgets.QTextEdit()
 		self.prompt_edit.setPlaceholderText("Describe your website idea… e.g. 'A photographer portfolio with gallery and contact form'")
@@ -153,12 +159,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
 		# Right: Preview
 		self.preview = WebPreview()
-
-		# Collapsible history
-		self.toggle_history_btn = QtWidgets.QToolButton()
-		self.toggle_history_btn.setText("Hide History")
-		self.toggle_history_btn.setCheckable(True)
-		self.toggle_history_btn.toggled.connect(lambda c: self._toggle_history(c, left))
 
 		splitter = QtWidgets.QSplitter()
 		splitter.addWidget(left)
