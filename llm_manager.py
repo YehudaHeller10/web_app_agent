@@ -145,37 +145,26 @@ class LLMManager:
 		if progress_callback:
 			progress_callback("🎯 **Planning Phase**\n\nI'm analyzing your request: *" + prompt + "*\n\nLet me break this down and plan the website structure...")
 		
-		# Enhanced system prompt with step-by-step explanations and Tailwind usage
+		# Simplified system prompt for better JSON generation
 		system = (
-			"You are a senior web developer creating a complete static website. "
-			"Explain your process step by step as you work, then provide the final code. "
-			"Use Tailwind CSS via CDN for professional styling, but also include a styles.css file for custom overrides. "
-			"In the HTML <head>, include the Tailwind CDN script and also link to styles.css and script.js. "
-			"Format your response like this:\n\n"
-			"🎨 **Design Phase**\n[Explain your design decisions]\n\n"
-			"⚙️ **Implementation Phase**\n[Explain what you're building]\n\n"
-			"📝 **Final Code**\n```json\n{\"html\": \"...\", \"css\": \"...\", \"js\": \"...\"}\n```\n\n"
-			"IMPORTANT: Always end with a valid JSON object containing html, css, and js keys. "
-			"Use modern HTML5 semantic tags, responsive design, Tailwind utility classes, and clean ES6 JavaScript."
+			"You are a web developer. Create a website and return ONLY a JSON object with this exact format:\n"
+			"{\"html\": \"<html>...</html>\", \"css\": \"body{...}\", \"js\": \"console.log('...')\"}\n\n"
+			"Requirements:\n"
+			"- Include Tailwind CSS CDN in HTML head\n"
+			"- Link to styles.css and script.js\n"
+			"- Use modern HTML5 and responsive design\n"
+			"- Return ONLY the JSON, no other text"
 		)
 		
 		user = (
 			f"Create a website for: {prompt}\n\n"
-			"Requirements:\n"
-			"- Single-page index.html\n"
-			"- Include Tailwind CSS via CDN in <head>\n"
-			"- Also include links to styles.css and script.js\n"
-			"- Use Tailwind classes for a premium, professional design\n"
-			"- Keep custom CSS minimal and scoped for overrides\n"
-			"- Modern, responsive design and accessible JS\n"
-			"- MUST end with valid JSON containing html, css, js\n\n"
-			"Please explain your process as you work."
+			"Return ONLY a JSON object with html, css, and js keys."
 		)
 		
 		if step_callback:
 			step_callback("design")
 		if progress_callback:
-			progress_callback("🎨 **Design Phase**\n\nNow I'm designing the visual layout and user experience...")
+			progress_callback("🎨 **Generating Website**\n\nCreating your website...")
 		
 		try:
 			llm = GPT4All(
@@ -187,37 +176,23 @@ class LLMManager:
 			if step_callback:
 				step_callback("html")
 			if progress_callback:
-				progress_callback("⚙️ **Implementation Phase**\n\nGenerating the HTML structure, CSS styles, and JavaScript functionality...")
+				progress_callback("⚙️ **Processing**\n\nGenerating code...")
 			
-			# Simple streaming with token callback
-			response_parts: list[str] = []
-			current_text = ""
-			
-			def on_token(token: str) -> None:
-				nonlocal current_text
-				response_parts.append(token)
-				current_text += token
-				if progress_callback and len(current_text) > 20:
-					# Show streaming text (excluding code blocks)
-					display_text = current_text
-					if "```" in display_text:
-						display_text = display_text.split("```")[0]
-					if display_text.strip():
-						progress_callback(display_text)
-			
+			# Generate without streaming first to debug
 			prompt_text = f"SYSTEM:\n{system}\nUSER:\n{user}\nASSISTANT:"
-			llm.generate(
+			response = llm.generate(
 				prompt_text,
 				temp=0.1,
 				max_tokens=4096,
-				streaming=True,
-				callback=on_token,
 			)
-			response = "".join(response_parts)
+			
+			# Show the full response for debugging
+			if progress_callback:
+				progress_callback(f"📝 **Response**\n\n{response[:500]}...")
 			llm.close()
 			
 			if progress_callback:
-				progress_callback("📝 **Final Code**\n\nExtracting and organizing the generated code...")
+				progress_callback("📝 **Processing**\n\nExtracting code...")
 				
 		except Exception as e:
 			raise RuntimeError(f"Model generation failed: {str(e)}")
