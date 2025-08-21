@@ -187,11 +187,31 @@ class LLMManager:
 			if progress_callback:
 				progress_callback("⚙️ **Implementation Phase**\n\nGenerating the HTML structure, CSS styles, and JavaScript functionality...")
 			
-			response = llm.generate(
-				f"SYSTEM:\n{system}\nUSER:\n{user}\nASSISTANT:",
+			# Stream tokens; suppress code fence content in live updates
+			response_parts: list[str] = []
+			in_code: bool = False
+			token_count: int = 0
+			def on_token(token: str) -> None:
+				nonlocal in_code, token_count
+				response_parts.append(token)
+				token_count += 1
+				if "```" in token:
+					in_code = True
+				if progress_callback and not in_code and token_count % 25 == 0:
+					# Show content before any code fences only
+					preview = "".join(response_parts)
+					preview = preview.split("```", 1)[0]
+					progress_callback(preview)
+			
+			prompt_text = f"SYSTEM:\n{system}\nUSER:\n{user}\nASSISTANT:"
+			llm.generate(
+				prompt_text,
 				temp=0.1,
 				max_tokens=4096,
+				streaming=True,
+				callback=on_token,
 			)
+			response = "".join(response_parts)
 			llm.close()
 			
 			if progress_callback:
@@ -200,15 +220,20 @@ class LLMManager:
 		except Exception as e:
 			raise RuntimeError(f"Model generation failed: {str(e)}")
 		
-		# Try parse JSON
+		# Try parse JSON first
 		try:
 			data = self._extract_json(response)
 			html = data.get("html", "")
 			css = data.get("css", "")
 			js = data.get("js", "")
 		except Exception:
-			# Fallback naive splits
-			html, css, js = self._fallback_sections(response)
+			# Try extracting fenced code blocks (```html, ```css, ```js)
+			fenced = self._extract_from_fences(response)
+			if fenced is not None:
+				html, css, js = fenced
+			else:
+				# Fallback naive splits
+				html, css, js = self._fallback_sections(response)
 		
 		if progress_callback:
 			progress_callback("✅ **Website Ready!**\n\nYour website has been generated successfully! The files are being saved and the preview will update shortly.")
@@ -226,6 +251,17 @@ class LLMManager:
 		if not m:
 			raise ValueError("No JSON found")
 		return json.loads(m.group(0))
+
+	def _extract_from_fences(self, text: str) -> Optional[tuple[str, str, str]]:
+		def find(lang_pattern: str) -> str:
+			m = re.search(r"```" + lang_pattern + r"\s*([\s\S]*?)\s*```", text, re.IGNORECASE)
+			return m.group(1).strip() if m else ""
+		html = find("html")
+		css = find("css")
+		js = find("(?:js|javascript)")
+		if html or css or js:
+			return html, css, js
+		return None
 
 	def _fallback_sections(self, text: str) -> tuple[str, str, str]:
 		# Heuristics to split content
