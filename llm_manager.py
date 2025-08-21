@@ -42,9 +42,30 @@ class LLMManager:
 		self.model_dir: Path = model_dir
 		self._models_cache: List[ModelInfo] = []
 
+	def _scan_local_models(self) -> List[ModelInfo]:
+		models: List[ModelInfo] = []
+		for path in sorted(self.model_dir.glob("*.gguf")):
+			try:
+				size = path.stat().st_size
+				models.append(ModelInfo(
+					name=path.stem,
+					filename=path.name,
+					filesize=size,
+					url="",
+					description="Local model",
+					license="",
+				))
+			except Exception:
+				continue
+		return models
+
 	def list_available_models(self, prioritize_code: bool = True) -> List[ModelInfo]:
+		# Always include local models
+		local = self._scan_local_models()
 		if self._models_cache:
-			return self._models_cache
+			# merge latest local with cached remotes
+			cached = [m for m in self._models_cache if m.filename not in {lm.filename for lm in local}]
+			return local + cached
 		models: List[ModelInfo] = []
 		for src in MODEL_SOURCES:
 			try:
@@ -52,14 +73,15 @@ class LLMManager:
 				resp.raise_for_status()
 				data = resp.json()
 				for item in data:
-					if not item.get("filename", "").endswith(".gguf"):
+					filename = item.get("filename") or item.get("fname") or ""
+					if not filename.endswith(".gguf"):
 						continue
-					name = item.get("name") or item.get("model") or item.get("filename")
+					name = item.get("name") or item.get("model") or filename
 					desc = item.get("description") or item.get("info") or ""
-					url = item.get("url") or item.get("download_url") or ""
-					filesize = int(item.get("filesize", 0))
+					url = item.get("url") or item.get("download_url") or item.get("download") or ""
+					filesize = int(item.get("filesize") or item.get("size") or 0)
 					license_str = item.get("license", "")
-					models.append(ModelInfo(name=name, filename=item["filename"], filesize=filesize, url=url, description=desc, license=license_str))
+					models.append(ModelInfo(name=name, filename=filename, filesize=filesize, url=url, description=desc, license=license_str))
 			except Exception:
 				continue
 		# Prefer smaller code-capable models
@@ -67,7 +89,6 @@ class LLMManager:
 			is_code = int(bool(re.search(r"code|coder|deepseek|starcoder|replit", m.name.lower()))) if prioritize_code else 0
 			size_score = 0
 			if m.filesize:
-				# prefer ~3-7GB
 				if m.filesize < 1_500_000_000:
 					size_score = 1
 				elif m.filesize < 4_500_000_000:
@@ -78,16 +99,16 @@ class LLMManager:
 					size_score = 0
 			return is_code * 10 + size_score
 		models.sort(key=score, reverse=True)
-		# Deduplicate by filename
+		# Deduplicate by filename and merge local first
 		seen = set()
-		deduped: List[ModelInfo] = []
-		for m in models:
+		merged: List[ModelInfo] = []
+		for m in local + models:
 			if m.filename in seen:
 				continue
 			seen.add(m.filename)
-			deduped.append(m)
-		self._models_cache = deduped
-		return deduped
+			merged.append(m)
+		self._models_cache = merged
+		return merged
 
 	def is_downloaded(self, model: ModelInfo) -> bool:
 		return (self.model_dir / model.filename).exists()

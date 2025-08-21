@@ -94,6 +94,10 @@ class MainWindow(QtWidgets.QMainWindow):
 		self.model_combo = QtWidgets.QComboBox()
 		self.refresh_models_btn = QtWidgets.QToolButton()
 		self.refresh_models_btn.setText("Refresh Models")
+		self.open_models_btn = QtWidgets.QToolButton()
+		self.open_models_btn.setText("Open Models Folder")
+		self.add_local_btn = QtWidgets.QToolButton()
+		self.add_local_btn.setText("Add Local Model")
 		self.generate_btn = QtWidgets.QPushButton("Generate Website")
 		self.generate_btn.clicked.connect(self._on_generate)
 		self.model_combo.activated.connect(self._on_model_selected)
@@ -102,6 +106,8 @@ class MainWindow(QtWidgets.QMainWindow):
 		center_top.addWidget(QtWidgets.QLabel("Model:"))
 		center_top.addWidget(self.model_combo, 1)
 		center_top.addWidget(self.refresh_models_btn)
+		center_top.addWidget(self.open_models_btn)
+		center_top.addWidget(self.add_local_btn)
 		center_top.addWidget(self.generate_btn)
 
 		self.steps = [
@@ -133,6 +139,12 @@ class MainWindow(QtWidgets.QMainWindow):
 
 		center = QtWidgets.QWidget()
 		cv = QtWidgets.QVBoxLayout(center)
+		header_row = QtWidgets.QHBoxLayout()
+		header_row.addWidget(QtWidgets.QLabel("Web App Builder"))
+		header_row.addStretch(1)
+		header_row.addWidget(self.toggle_history_btn)
+
+		cv.addLayout(header_row)
 		cv.addLayout(center_top)
 		cv.addLayout(suggestions)
 		cv.addWidget(self.prompt_edit, 1)
@@ -141,6 +153,12 @@ class MainWindow(QtWidgets.QMainWindow):
 
 		# Right: Preview
 		self.preview = WebPreview()
+
+		# Collapsible history
+		self.toggle_history_btn = QtWidgets.QToolButton()
+		self.toggle_history_btn.setText("Hide History")
+		self.toggle_history_btn.setCheckable(True)
+		self.toggle_history_btn.toggled.connect(lambda c: self._toggle_history(c, left))
 
 		splitter = QtWidgets.QSplitter()
 		splitter.addWidget(left)
@@ -151,6 +169,8 @@ class MainWindow(QtWidgets.QMainWindow):
 		self.setCentralWidget(splitter)
 
 		self.refresh_models_btn.clicked.connect(self._load_models)
+		self.open_models_btn.clicked.connect(self._open_models_folder)
+		self.add_local_btn.clicked.connect(self._add_local_model)
 
 	def _apply_theme(self) -> None:
 		# Blue/black gradient theme via QSS
@@ -158,10 +178,12 @@ class MainWindow(QtWidgets.QMainWindow):
 			"""
 			QMainWindow { background: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:1, stop:0 #0b1020, stop:1 #102a43); }
 			QLabel, QLineEdit, QTextEdit, QListWidget, QComboBox, QPushButton { color: #e6eef8; font-size: 14px; }
-			QToolBar, QLineEdit, QTextEdit, QListWidget, QComboBox { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; }
-			QPushButton { background-color: #1f4b99; border: 1px solid #2b6cb0; padding: 8px 14px; border-radius: 8px; }
+			QToolBar, QLineEdit, QTextEdit, QListWidget, QComboBox { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; }
+			QPushButton { background-color: #1f4b99; border: 1px solid #2b6cb0; padding: 10px 16px; border-radius: 10px; }
 			QPushButton:hover { background-color: #275dad; }
-			QListWidget::item { padding: 8px; }
+			QComboBox, QLineEdit { min-height: 36px; }
+			QTextEdit { padding: 8px; }
+			QListWidget::item { padding: 10px; }
 			#previewFrame { background: #0e1726; border-radius: 12px; }
 			"""
 		)
@@ -298,6 +320,28 @@ class MainWindow(QtWidgets.QMainWindow):
 			s.set_active(False)
 			s.status_label.setText("")
 			s.text_label.setText(labels[i])
+
+	def _open_models_folder(self) -> None:
+		from llm_manager import DEFAULT_MODEL_DIR
+		DEFAULT_MODEL_DIR.mkdir(parents=True, exist_ok=True)
+		QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(str(DEFAULT_MODEL_DIR)))
+
+	def _add_local_model(self) -> None:
+		path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Add Local Model", str(Path.cwd()), "GGUF Models (*.gguf)")
+		if not path:
+			return
+		from llm_manager import DEFAULT_MODEL_DIR
+		dest = DEFAULT_MODEL_DIR / Path(path).name
+		try:
+			if Path(path).resolve() != dest.resolve():
+				dest.write_bytes(Path(path).read_bytes())
+			self._load_models()
+		except Exception as e:
+			QtWidgets.QMessageBox.critical(self, "Add model failed", str(e))
+
+	def _toggle_history(self, collapsed: bool, panel: QtWidgets.QWidget) -> None:
+		panel.setVisible(not collapsed)
+		self.toggle_history_btn.setText("Show History" if collapsed else "Hide History")
 
 
 def main() -> None:
