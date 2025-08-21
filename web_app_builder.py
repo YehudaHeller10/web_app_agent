@@ -422,7 +422,14 @@ class MainWindow(QtWidgets.QMainWindow):
 
 	def _update_ai_message(self, content: str) -> None:
 		if hasattr(self, 'current_ai_message'):
-			self.current_ai_message.update_content(content)
+			# Append new content to existing message for streaming effect
+			current_content = self.current_ai_message.content_label.text()
+			if content.startswith(current_content):
+				# New content, update
+				self.current_ai_message.update_content(content)
+			else:
+				# Streaming content, append
+				self.current_ai_message.update_content(current_content + content)
 
 	def _on_model_selected(self) -> None:
 		model: Optional[ModelInfo] = self.model_combo.currentData(QtCore.Qt.ItemDataRole.UserRole)

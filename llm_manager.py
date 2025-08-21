@@ -155,6 +155,7 @@ class LLMManager:
 			"🎨 **Design Phase**\n[Explain your design decisions]\n\n"
 			"⚙️ **Implementation Phase**\n[Explain what you're building]\n\n"
 			"📝 **Final Code**\n```json\n{\"html\": \"...\", \"css\": \"...\", \"js\": \"...\"}\n```\n\n"
+			"IMPORTANT: Always end with a valid JSON object containing html, css, and js keys. "
 			"Use modern HTML5 semantic tags, responsive design, Tailwind utility classes, and clean ES6 JavaScript."
 		)
 		
@@ -166,7 +167,8 @@ class LLMManager:
 			"- Also include links to styles.css and script.js\n"
 			"- Use Tailwind classes for a premium, professional design\n"
 			"- Keep custom CSS minimal and scoped for overrides\n"
-			"- Modern, responsive design and accessible JS\n\n"
+			"- Modern, responsive design and accessible JS\n"
+			"- MUST end with valid JSON containing html, css, js\n\n"
 			"Please explain your process as you work."
 		)
 		
@@ -187,21 +189,21 @@ class LLMManager:
 			if progress_callback:
 				progress_callback("⚙️ **Implementation Phase**\n\nGenerating the HTML structure, CSS styles, and JavaScript functionality...")
 			
-			# Stream tokens; suppress code fence content in live updates
+			# Simple streaming with token callback
 			response_parts: list[str] = []
-			in_code: bool = False
-			token_count: int = 0
+			current_text = ""
+			
 			def on_token(token: str) -> None:
-				nonlocal in_code, token_count
+				nonlocal current_text
 				response_parts.append(token)
-				token_count += 1
-				if "```" in token:
-					in_code = True
-				if progress_callback and not in_code and token_count % 25 == 0:
-					# Show content before any code fences only
-					preview = "".join(response_parts)
-					preview = preview.split("```", 1)[0]
-					progress_callback(preview)
+				current_text += token
+				if progress_callback and len(current_text) > 20:
+					# Show streaming text (excluding code blocks)
+					display_text = current_text
+					if "```" in display_text:
+						display_text = display_text.split("```")[0]
+					if display_text.strip():
+						progress_callback(display_text)
 			
 			prompt_text = f"SYSTEM:\n{system}\nUSER:\n{user}\nASSISTANT:"
 			llm.generate(
@@ -226,7 +228,7 @@ class LLMManager:
 			html = data.get("html", "")
 			css = data.get("css", "")
 			js = data.get("js", "")
-		except Exception:
+		except Exception as e:
 			# Try extracting fenced code blocks (```html, ```css, ```js)
 			fenced = self._extract_from_fences(response)
 			if fenced is not None:
@@ -234,6 +236,9 @@ class LLMManager:
 			else:
 				# Fallback naive splits
 				html, css, js = self._fallback_sections(response)
+				# Log the parsing issue for debugging
+				print(f"JSON parsing failed: {e}")
+				print(f"Response preview: {response[:500]}...")
 		
 		if progress_callback:
 			progress_callback("✅ **Website Ready!**\n\nYour website has been generated successfully! The files are being saved and the preview will update shortly.")
