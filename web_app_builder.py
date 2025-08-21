@@ -11,34 +11,81 @@ from web_preview import WebPreview
 from llm_manager import LLMManager, ModelInfo
 
 
-class StepWidget(QtWidgets.QWidget):
-	def __init__(self, icon: str, text: str, parent=None) -> None:
+class ChatMessage(QtWidgets.QWidget):
+	def __init__(self, content: str, is_user: bool = False, parent=None) -> None:
 		super().__init__(parent)
-		self.icon_label = QtWidgets.QLabel(icon)
-		self.text_label = QtWidgets.QLabel(text)
-		self.status_label = QtWidgets.QLabel("")
-		self.progress = QtWidgets.QProgressBar()
-		self.progress.setRange(0, 1)
-		self.progress.setTextVisible(False)
+		self.is_user = is_user
+		
 		layout = QtWidgets.QHBoxLayout(self)
-		layout.addWidget(self.icon_label)
-		layout.addWidget(self.text_label, 1)
-		layout.addWidget(self.status_label)
-		layout.addWidget(self.progress)
+		layout.setContentsMargins(20, 10, 20, 10)
+		
+		# Avatar
+		avatar = QtWidgets.QLabel("👤" if is_user else "🤖")
+		avatar.setFixedSize(32, 32)
+		avatar.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+		avatar.setStyleSheet("font-size: 20px;")
+		
+		# Message content
+		self.content_label = QtWidgets.QLabel(content)
+		self.content_label.setWordWrap(True)
+		self.content_label.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.TextSelectableByMouse)
+		self.content_label.setStyleSheet("""
+			QLabel {
+				background-color: rgba(255,255,255,0.05);
+				border-radius: 12px;
+				padding: 12px 16px;
+				color: #e6eef8;
+				font-size: 14px;
+				line-height: 1.5;
+			}
+		""")
+		
+		if is_user:
+			layout.addStretch()
+			layout.addWidget(self.content_label)
+			layout.addWidget(avatar)
+		else:
+			layout.addWidget(avatar)
+			layout.addWidget(self.content_label)
+			layout.addStretch()
 
-	def set_active(self, active: bool) -> None:
-		self.progress.setRange(0, 0 if active else 1)
-		self.status_label.setText("In progress…" if active else "")
+	def update_content(self, content: str) -> None:
+		self.content_label.setText(content)
 
-	def set_done(self) -> None:
-		self.progress.setRange(1, 1)
-		self.status_label.setText("✅ Done")
+
+class ProgressSpinner(QtWidgets.QWidget):
+	def __init__(self, parent=None) -> None:
+		super().__init__(parent)
+		self.angle = 0
+		self.timer = QtCore.QTimer()
+		self.timer.timeout.connect(self.rotate)
+		self.timer.start(50)
+		
+	def rotate(self) -> None:
+		self.angle = (self.angle + 30) % 360
+		self.update()
+		
+	def paintEvent(self, event) -> None:
+		painter = QtGui.QPainter(self)
+		painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+		
+		# Draw spinning dots
+		center = self.rect().center()
+		radius = 8
+		for i in range(8):
+			angle = self.angle + i * 45
+			x = center.x() + radius * 2 * QtCore.Qt.cos(QtCore.Qt.radians(angle))
+			y = center.y() + radius * 2 * QtCore.Qt.sin(QtCore.Qt.radians(angle))
+			alpha = 255 - (i * 30)
+			painter.setPen(QtGui.QPen(QtGui.QColor(255, 255, 255, alpha), 3))
+			painter.drawPoint(int(x), int(y))
 
 
 class GenerationWorker(QtCore.QObject):
 	finished = QtCore.Signal(dict)
 	error = QtCore.Signal(str)
 	progress_step = QtCore.Signal(str)
+	progress_message = QtCore.Signal(str)
 	download_progress = QtCore.Signal(int, int)
 
 	def __init__(self, prompt: str, model: ModelInfo, llm: LLMManager, pm: ProjectManager) -> None:
@@ -53,9 +100,16 @@ class GenerationWorker(QtCore.QObject):
 		try:
 			if not self.llm.is_downloaded(self.model):
 				self.progress_step.emit("download")
+				self.progress_message.emit("📥 **Downloading Model**\n\nDownloading the AI model to your local machine...")
 				self.llm.download_model(self.model, progress=lambda d, t: self.download_progress.emit(d, t))
-			self.progress_step.emit("planning")
-			result = self.llm.generate_site(self.prompt, self.model, step_callback=lambda s: self.progress_step.emit(s))
+			
+			self.progress_message.emit("🎯 **Starting Generation**\n\nInitializing the AI model and preparing to create your website...")
+			result = self.llm.generate_site(
+				self.prompt, 
+				self.model, 
+				step_callback=lambda s: self.progress_step.emit(s),
+				progress_callback=lambda msg: self.progress_message.emit(msg)
+			)
 			self.finished.emit(result)
 		except Exception as e:
 			self.error.emit(str(e))
@@ -64,8 +118,8 @@ class GenerationWorker(QtCore.QObject):
 class MainWindow(QtWidgets.QMainWindow):
 	def __init__(self) -> None:
 		super().__init__()
-		self.setWindowTitle("Web App Builder - Static Site Generator")
-		self.resize(1400, 860)
+		self.setWindowTitle("Web App Builder - AI Website Generator")
+		self.resize(1600, 1000)
 
 		self.pm = ProjectManager()
 		self.llm = LLMManager()
@@ -82,97 +136,94 @@ class MainWindow(QtWidgets.QMainWindow):
 		self._connect_signals()
 
 	def _create_widgets(self) -> None:
-		# Left: History
+		# Left sidebar - History
 		self.history_search = QtWidgets.QLineEdit()
-		self.history_search.setPlaceholderText("Search projects…")
+		self.history_search.setPlaceholderText("🔍 Search projects...")
 		self.history_list = QtWidgets.QListWidget()
 		self.history_list.itemActivated.connect(self._open_history_item)
 		
 		# Collapsible history toggle
 		self.toggle_history_btn = QtWidgets.QToolButton()
-		self.toggle_history_btn.setText("Hide History")
+		self.toggle_history_btn.setText("📋")
+		self.toggle_history_btn.setToolTip("Toggle History")
 		self.toggle_history_btn.setCheckable(True)
 
-		# Center: Interaction
-		self.prompt_edit = QtWidgets.QTextEdit()
-		self.prompt_edit.setPlaceholderText("Describe your website idea… e.g. 'A photographer portfolio with gallery and contact form'")
+		# Top toolbar
 		self.model_combo = QtWidgets.QComboBox()
+		self.model_combo.setPlaceholderText("Select AI Model")
 		self.refresh_models_btn = QtWidgets.QToolButton()
-		self.refresh_models_btn.setText("Refresh Models")
+		self.refresh_models_btn.setText("🔄")
+		self.refresh_models_btn.setToolTip("Refresh Models")
 		self.open_models_btn = QtWidgets.QToolButton()
-		self.open_models_btn.setText("Open Models Folder")
+		self.open_models_btn.setText("📁")
+		self.open_models_btn.setToolTip("Open Models Folder")
 		self.add_local_btn = QtWidgets.QToolButton()
-		self.add_local_btn.setText("Add Local Model")
-		self.generate_btn = QtWidgets.QPushButton("Generate Website")
+		self.add_local_btn.setText("➕")
+		self.add_local_btn.setToolTip("Add Local Model")
 
-		# Progress steps
-		self.steps = [
-			StepWidget("🎯", "Planning your website structure…"),
-			StepWidget("🎨", "Designing the visual layout…"),
-			StepWidget("⚙️", "Generating HTML structure…"),
-			StepWidget("🎭", "Creating beautiful CSS styles…"),
-			StepWidget("⚡", "Adding interactive JavaScript…"),
-			StepWidget("✅", "Your website is ready!"),
-		]
-		self._set_all_steps_idle()
+		# Chat area
+		self.chat_scroll = QtWidgets.QScrollArea()
+		self.chat_widget = QtWidgets.QWidget()
+		self.chat_layout = QtWidgets.QVBoxLayout(self.chat_widget)
+		self.chat_layout.addStretch()
+		self.chat_scroll.setWidget(self.chat_widget)
+		self.chat_scroll.setWidgetResizable(True)
+		self.chat_scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
-		# Right: Preview
+		# Input area
+		self.input_container = QtWidgets.QWidget()
+		self.input_layout = QtWidgets.QHBoxLayout(self.input_container)
+		self.input_layout.setContentsMargins(20, 10, 20, 20)
+		
+		self.prompt_edit = QtWidgets.QTextEdit()
+		self.prompt_edit.setPlaceholderText("Describe your website idea... (e.g., 'A photographer portfolio with gallery and contact form')")
+		self.prompt_edit.setMaximumHeight(100)
+		
+		self.generate_btn = QtWidgets.QPushButton("🚀 Generate Website")
+		self.generate_btn.setFixedSize(150, 40)
+
+		# Right panel - Preview
 		self.preview = WebPreview()
 
 	def _setup_layouts(self) -> None:
 		# Left panel
 		left = QtWidgets.QWidget()
+		left.setMaximumWidth(300)
 		lv = QtWidgets.QVBoxLayout(left)
-		lv.addWidget(QtWidgets.QLabel("History"))
+		lv.setContentsMargins(10, 10, 10, 10)
+		lv.addWidget(QtWidgets.QLabel("📚 Project History"))
 		lv.addWidget(self.history_search)
 		lv.addWidget(self.history_list, 1)
 
+		# Top toolbar
+		toolbar = QtWidgets.QWidget()
+		toolbar_layout = QtWidgets.QHBoxLayout(toolbar)
+		toolbar_layout.setContentsMargins(20, 10, 20, 10)
+		toolbar_layout.addWidget(QtWidgets.QLabel("🤖 Model:"))
+		toolbar_layout.addWidget(self.model_combo, 1)
+		toolbar_layout.addWidget(self.refresh_models_btn)
+		toolbar_layout.addWidget(self.open_models_btn)
+		toolbar_layout.addWidget(self.add_local_btn)
+		toolbar_layout.addWidget(self.toggle_history_btn)
+
 		# Center panel
-		center_top = QtWidgets.QHBoxLayout()
-		center_top.addWidget(QtWidgets.QLabel("Model:"))
-		center_top.addWidget(self.model_combo, 1)
-		center_top.addWidget(self.refresh_models_btn)
-		center_top.addWidget(self.open_models_btn)
-		center_top.addWidget(self.add_local_btn)
-		center_top.addWidget(self.generate_btn)
-
-		header_row = QtWidgets.QHBoxLayout()
-		header_row.addWidget(QtWidgets.QLabel("Web App Builder"))
-		header_row.addStretch(1)
-		header_row.addWidget(self.toggle_history_btn)
-
-		steps_widget = QtWidgets.QWidget()
-		steps_layout = QtWidgets.QVBoxLayout(steps_widget)
-		for s in self.steps:
-			steps_layout.addWidget(s)
-		steps_layout.addStretch(1)
-
-		suggestions = QtWidgets.QHBoxLayout()
-		for text in [
-			"Portfolio for a photographer",
-			"Restaurant site with menu and contact form",
-			"Event landing page with schedule and speakers",
-			"Modern blog homepage",
-		]:
-			btn = QtWidgets.QPushButton(text)
-			btn.clicked.connect(lambda _, t=text: self.prompt_edit.setPlainText(t))
-			suggestions.addWidget(btn)
-
 		center = QtWidgets.QWidget()
 		cv = QtWidgets.QVBoxLayout(center)
-		cv.addLayout(header_row)
-		cv.addLayout(center_top)
-		cv.addLayout(suggestions)
-		cv.addWidget(self.prompt_edit, 1)
-		cv.addWidget(QtWidgets.QLabel("Progress"))
-		cv.addWidget(steps_widget)
+		cv.setContentsMargins(0, 0, 0, 0)
+		cv.addWidget(toolbar)
+		cv.addWidget(self.chat_scroll, 1)
+		cv.addWidget(self.input_container)
+
+		# Input area layout
+		self.input_layout.addWidget(self.prompt_edit, 1)
+		self.input_layout.addWidget(self.generate_btn)
 
 		# Main splitter
 		splitter = QtWidgets.QSplitter()
 		splitter.addWidget(left)
 		splitter.addWidget(center)
 		splitter.addWidget(self.preview)
-		splitter.setSizes([250, 600, 550])
+		splitter.setSizes([300, 800, 500])
 
 		self.setCentralWidget(splitter)
 
@@ -186,39 +237,128 @@ class MainWindow(QtWidgets.QMainWindow):
 		self.toggle_history_btn.toggled.connect(self._toggle_history)
 
 	def _apply_theme(self) -> None:
-		# Blue/black gradient theme via QSS
+		# ChatGPT-like theme
 		self.setStyleSheet(
 			"""
-			QMainWindow { background: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:1, stop:0 #0b1020, stop:1 #102a43); }
-			QLabel, QLineEdit, QTextEdit, QListWidget, QComboBox, QPushButton { color: #e6eef8; font-size: 14px; }
-			QToolBar, QLineEdit, QTextEdit, QListWidget, QComboBox { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; }
-			QPushButton { background-color: #1f4b99; border: 1px solid #2b6cb0; padding: 10px 16px; border-radius: 10px; }
-			QPushButton:hover { background-color: #275dad; }
-			QComboBox, QLineEdit { min-height: 36px; }
-			QTextEdit { padding: 8px; }
-			QListWidget::item { padding: 10px; }
-			#previewFrame { background: #0e1726; border-radius: 12px; }
+			QMainWindow { 
+				background-color: #343541; 
+				color: #ececf1;
+			}
+			QLabel, QLineEdit, QTextEdit, QListWidget, QComboBox, QPushButton { 
+				color: #ececf1; 
+				font-size: 14px; 
+				font-family: 'Segoe UI', Arial, sans-serif;
+			}
+			QLineEdit, QTextEdit, QComboBox { 
+				background-color: #40414f; 
+				border: 1px solid #565869; 
+				border-radius: 8px; 
+				padding: 8px 12px;
+			}
+			QLineEdit:focus, QTextEdit:focus, QComboBox:focus { 
+				border-color: #10a37f; 
+			}
+			QPushButton { 
+				background-color: #10a37f; 
+				border: none; 
+				border-radius: 8px; 
+				padding: 10px 16px; 
+				font-weight: 500;
+			}
+			QPushButton:hover { 
+				background-color: #0d8f6f; 
+			}
+			QPushButton:pressed { 
+				background-color: #0b7a5f; 
+			}
+			QPushButton:disabled { 
+				background-color: #565869; 
+				color: #8e8ea0; 
+			}
+			QToolButton { 
+				background-color: transparent; 
+				border: 1px solid #565869; 
+				border-radius: 6px; 
+				padding: 6px; 
+				font-size: 16px;
+			}
+			QToolButton:hover { 
+				background-color: #40414f; 
+				border-color: #10a37f; 
+			}
+			QListWidget { 
+				background-color: #40414f; 
+				border: 1px solid #565869; 
+				border-radius: 8px; 
+				padding: 4px;
+			}
+			QListWidget::item { 
+				padding: 8px 12px; 
+				border-radius: 6px; 
+				margin: 2px;
+			}
+			QListWidget::item:hover { 
+				background-color: #565869; 
+			}
+			QListWidget::item:selected { 
+				background-color: #10a37f; 
+			}
+			QScrollArea { 
+				background-color: #343541; 
+				border: none; 
+			}
+			QScrollBar:vertical { 
+				background-color: #40414f; 
+				width: 12px; 
+				border-radius: 6px; 
+			}
+			QScrollBar::handle:vertical { 
+				background-color: #565869; 
+				border-radius: 6px; 
+				min-height: 20px; 
+			}
+			QScrollBar::handle:vertical:hover { 
+				background-color: #10a37f; 
+			}
+			#previewFrame { 
+				background-color: #1a1a1a; 
+				border-radius: 12px; 
+			}
 			"""
 		)
+
+	def _add_chat_message(self, content: str, is_user: bool = False) -> ChatMessage:
+		message = ChatMessage(content, is_user)
+		self.chat_layout.insertWidget(self.chat_layout.count() - 1, message)
+		return message
+
+	def _add_progress_message(self, content: str) -> ChatMessage:
+		message = ChatMessage(content, False)
+		# Add spinner
+		spinner = ProgressSpinner()
+		spinner.setFixedSize(20, 20)
+		message.layout().insertWidget(1, spinner)
+		self.chat_layout.insertWidget(self.chat_layout.count() - 1, message)
+		return message
 
 	def _load_models(self) -> None:
 		try:
 			self.model_combo.clear()
 			models = self.llm.list_available_models(prioritize_code=True)[:30]
 			for m in models:
-				status = "(cached)" if self.llm.is_downloaded(m) else ""
-				self.model_combo.addItem(f"{m.name} {status}", m)
+				status = " ✅" if self.llm.is_downloaded(m) else ""
+				self.model_combo.addItem(f"{m.name}{status}", m)
 				self.model_combo.setItemData(self.model_combo.count()-1, m, QtCore.Qt.ItemDataRole.UserRole)
 			if self.model_combo.count() == 0:
-				self.model_combo.addItem("NO MODELS FOUNDS", None)
+				self.model_combo.addItem("❌ NO MODELS FOUNDS", None)
 		except Exception as e:
 			self.model_combo.clear()
-			self.model_combo.addItem(f"Error loading models: {str(e)}", None)
+			self.model_combo.addItem(f"❌ Error: {str(e)}", None)
 
 	def _load_history(self) -> None:
 		self.history_list.clear()
 		for rec in self.pm.list_history():
-			item = QtWidgets.QListWidgetItem(f"{rec.name}  •  {rec.description}  •  {rec.timestamp}")
+			item = QtWidgets.QListWidgetItem(f"📄 {rec.name}\n💬 {rec.description[:50]}...\n🕒 {rec.timestamp}")
 			item.setData(QtCore.Qt.ItemDataRole.UserRole, rec)
 			self.history_list.addItem(item)
 
@@ -234,6 +374,8 @@ class MainWindow(QtWidgets.QMainWindow):
 		index_path = Path(rec.path) / "index.html"
 		if index_path.exists():
 			self.preview.load_index(index_path)
+			# Add message to chat
+			self._add_chat_message(f"📄 **Loaded Project**: {rec.name}\n\n{rec.description}", False)
 
 	def _project_name_from_prompt(self, prompt: str) -> str:
 		return (prompt[:40] or "My Website").strip().rstrip(".")
@@ -245,7 +387,7 @@ class MainWindow(QtWidgets.QMainWindow):
 			return
 		model: Optional[ModelInfo] = self.model_combo.currentData()
 		if model is None:
-			QtWidgets.QMessageBox.warning(self, "Model needed", "NO MODELS FOUNDS")
+			QtWidgets.QMessageBox.warning(self, "Model needed", "❌ NO MODELS FOUNDS")
 			return
 		
 		# Verify model file exists
@@ -253,23 +395,31 @@ class MainWindow(QtWidgets.QMainWindow):
 		if not model_path.exists():
 			QtWidgets.QMessageBox.critical(self, "Model Error", f"Model file not found: {model_path}\nPlease download the model first.")
 			return
-			
-		self._set_all_steps_idle()
-		self.steps[0].set_active(True)
+		
+		# Add user message to chat
+		self._add_chat_message(prompt, True)
+		
+		# Add initial AI message
+		self.current_ai_message = self._add_progress_message("🤖 **AI Assistant**\n\nInitializing...")
+		
 		self.generate_btn.setEnabled(False)
+		self.prompt_edit.clear()
 
 		self.thread = QtCore.QThread(self)
 		self.worker = GenerationWorker(prompt, model, self.llm, self.pm)
 		self.worker.moveToThread(self.thread)
 		self.thread.started.connect(self.worker.run)
-		self.worker.progress_step.connect(self._on_progress_step)
-		self.worker.download_progress.connect(self._on_download_progress)
+		self.worker.progress_message.connect(self._update_ai_message)
 		self.worker.finished.connect(self._on_generation_finished)
 		self.worker.error.connect(self._on_generation_error)
 		self.worker.finished.connect(self.thread.quit)
 		self.worker.error.connect(self.thread.quit)
 		self.thread.finished.connect(self.worker.deleteLater)
 		self.thread.start()
+
+	def _update_ai_message(self, content: str) -> None:
+		if hasattr(self, 'current_ai_message'):
+			self.current_ai_message.update_content(content)
 
 	def _on_model_selected(self) -> None:
 		model: Optional[ModelInfo] = self.model_combo.currentData(QtCore.Qt.ItemDataRole.UserRole)
@@ -292,31 +442,7 @@ class MainWindow(QtWidgets.QMainWindow):
 		except Exception as e:
 			QtWidgets.QMessageBox.critical(self, "Download failed", str(e))
 
-	def _on_progress_step(self, step: str) -> None:
-		mapping = {
-			"download": 0,
-			"planning": 0,
-			"design": 1,
-			"html": 2,
-			"css": 3,
-			"js": 4,
-		}
-		if step in mapping:
-			idx = mapping[step]
-			for i, sw in enumerate(self.steps):
-				if i < idx:
-					sw.set_done()
-				elif i == idx:
-					sw.set_active(True)
-				else:
-					sw.set_active(False)
-
-	def _on_download_progress(self, downloaded: int, total: int) -> None:
-		self.steps[0].text_label.setText(f"Downloading model… {downloaded//(1024*1024)} / {total//(1024*1024)} MB")
-
 	def _on_generation_finished(self, result: dict) -> None:
-		self.steps[4].set_done()
-		self.steps[5].set_done()
 		self.generate_btn.setEnabled(True)
 		prompt = self.prompt_edit.toPlainText().strip()
 		name = self._project_name_from_prompt(prompt)
@@ -326,6 +452,10 @@ class MainWindow(QtWidgets.QMainWindow):
 		self._load_history()
 		index_path = project_dir / "index.html"
 		self.preview.load_index(index_path)
+		
+		# Update final message
+		if hasattr(self, 'current_ai_message'):
+			self.current_ai_message.update_content("✅ **Website Generated Successfully!**\n\nYour website has been created and is ready for preview. The files have been saved to your project folder.")
 
 	def _on_generation_error(self, message: str) -> None:
 		self.generate_btn.setEnabled(True)
@@ -333,23 +463,9 @@ class MainWindow(QtWidgets.QMainWindow):
 		error_dialog = QtWidgets.QMessageBox(self)
 		error_dialog.setIcon(QtWidgets.QMessageBox.Icon.Critical)
 		error_dialog.setWindowTitle("Generation Failed")
-		error_dialog.setText(f"Error: {message}")
+		error_dialog.setText(f"❌ Error: {message}")
 		error_dialog.setDetailedText(f"Model: {self.model_combo.currentText()}\nPrompt: {self.prompt_edit.toPlainText()[:100]}...")
 		error_dialog.exec()
-
-	def _set_all_steps_idle(self) -> None:
-		labels = [
-			"Planning your website structure…",
-			"Designing the visual layout…",
-			"Generating HTML structure…",
-			"Creating beautiful CSS styles…",
-			"Adding interactive JavaScript…",
-			"Your website is ready!",
-		]
-		for i, s in enumerate(self.steps):
-			s.set_active(False)
-			s.status_label.setText("")
-			s.text_label.setText(labels[i])
 
 	def _open_models_folder(self) -> None:
 		from llm_manager import DEFAULT_MODEL_DIR
@@ -373,7 +489,7 @@ class MainWindow(QtWidgets.QMainWindow):
 		# Find the left panel (first widget in splitter)
 		left_panel = self.centralWidget().widget(0)
 		left_panel.setVisible(not collapsed)
-		self.toggle_history_btn.setText("Show History" if collapsed else "Hide History")
+		self.toggle_history_btn.setText("📋" if collapsed else "📋")
 
 
 def main() -> None:

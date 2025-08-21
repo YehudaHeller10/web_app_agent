@@ -133,29 +133,45 @@ class LLMManager:
 							progress(downloaded, total)
 		return dest
 
-	def generate_site(self, prompt: str, model: ModelInfo, step_callback: Optional[Callable[[str], None]] = None) -> Dict[str, str]:
+	def generate_site(self, prompt: str, model: ModelInfo, step_callback: Optional[Callable[[str], None]] = None, progress_callback: Optional[Callable[[str], None]] = None) -> Dict[str, str]:
 		if GPT4All is None:
 			raise RuntimeError("gpt4all package not installed")
 		model_path = str(self.model_dir / model.filename)
 		if not Path(model_path).exists():
 			raise RuntimeError(f"Model file not found: {model_path}")
+		
 		if step_callback:
 			step_callback("planning")
-		# Instruct model to return strict JSON
+		if progress_callback:
+			progress_callback("🎯 **Planning Phase**\n\nI'm analyzing your request: *" + prompt + "*\n\nLet me break this down and plan the website structure...")
+		
+		# Enhanced system prompt with step-by-step explanations
 		system = (
-			"You are a senior web developer generating a complete static website. "
-			"Return ONLY a compact JSON object with keys: html, css, js. "
-			"Do not include markdown fences. Use modern HTML5 semantic tags, responsive CSS, and clean ES6 JS."
+			"You are a senior web developer creating a complete static website. "
+			"Explain your process step by step as you work, then provide the final code. "
+			"Format your response like this:\n\n"
+			"🎨 **Design Phase**\n[Explain your design decisions]\n\n"
+			"⚙️ **Implementation Phase**\n[Explain what you're building]\n\n"
+			"📝 **Final Code**\n```json\n{\"html\": \"...\", \"css\": \"...\", \"js\": \"...\"}\n```\n\n"
+			"Use modern HTML5 semantic tags, responsive CSS with blue/black gradients, and clean ES6 JavaScript."
 		)
+		
 		user = (
-			f"User description: {prompt}\n"
-			"Requirements: Single-page index.html with links to styles.css and script.js. "
-			"Keep CSS modern and aesthetic (blue/black gradient). Make JS unobtrusive and accessible."
+			f"Create a website for: {prompt}\n\n"
+			"Requirements:\n"
+			"- Single-page index.html with links to styles.css and script.js\n"
+			"- Modern, responsive design with blue/black gradient theme\n"
+			"- Clean, accessible JavaScript\n"
+			"- Professional and beautiful UI\n\n"
+			"Please explain your process as you work."
 		)
+		
 		if step_callback:
 			step_callback("design")
+		if progress_callback:
+			progress_callback("🎨 **Design Phase**\n\nNow I'm designing the visual layout and user experience...")
+		
 		try:
-			# Force CPU mode and disable CUDA
 			llm = GPT4All(
 				model_name=model_path, 
 				allow_download=False, 
@@ -164,16 +180,25 @@ class LLMManager:
 				use_mmap=True,
 				threads=4
 			)
+			
 			if step_callback:
 				step_callback("html")
+			if progress_callback:
+				progress_callback("⚙️ **Implementation Phase**\n\nGenerating the HTML structure, CSS styles, and JavaScript functionality...")
+			
 			response = llm.generate(
 				f"SYSTEM:\n{system}\nUSER:\n{user}\nASSISTANT:",
 				temp=0.1,
 				max_tokens=4096,
 			)
 			llm.close()
+			
+			if progress_callback:
+				progress_callback("📝 **Final Code**\n\nExtracting and organizing the generated code...")
+				
 		except Exception as e:
 			raise RuntimeError(f"Model generation failed: {str(e)}")
+		
 		# Try parse JSON
 		try:
 			data = self._extract_json(response)
@@ -183,6 +208,10 @@ class LLMManager:
 		except Exception:
 			# Fallback naive splits
 			html, css, js = self._fallback_sections(response)
+		
+		if progress_callback:
+			progress_callback("✅ **Website Ready!**\n\nYour website has been generated successfully! The files are being saved and the preview will update shortly.")
+		
 		return {"html": html, "css": css, "js": js}
 
 	def _extract_json(self, text: str) -> Dict[str, str]:
