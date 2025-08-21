@@ -167,35 +167,19 @@ class LLMManager:
 			progress_callback("🎨 **Generating Website**\n\nCreating your website...")
 		
 		try:
-			llm = GPT4All(
-				model_name=model_path,
-				allow_download=False,
-				device='cpu'
-			)
+			llm = GPT4All(model_name=model_path)
 			
 			if step_callback:
 				step_callback("html")
 			if progress_callback:
 				progress_callback("⚙️ **Processing**\n\nGenerating code...")
 			
-			# Generate with streaming for real-time output
+			# Generate response
 			prompt_text = f"SYSTEM:\n{system}\nUSER:\n{user}\nASSISTANT:"
-			response_parts = []
-			current_text = ""
-			
-			def on_token(token: str) -> None:
-				nonlocal current_text
-				response_parts.append(token)
-				current_text += token
-				if progress_callback and len(current_text) > 10:
-					progress_callback(f"⚙️ **Generating**\n\n{current_text}")
-			
 			response = llm.generate(
 				prompt_text,
 				temp=0.1,
 				max_tokens=4096,
-				streaming=True,
-				callback=on_token,
 			)
 			llm.close()
 			
